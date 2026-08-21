@@ -16,7 +16,7 @@
   --sage:#8FAD8B; --gold:#D6A33F; --espresso:#3A2C25; --espresso-2:#4A392F;
   --espresso-ink:#F3E8D9; --espresso-soft:#C7B4A2;
   --sc-ig:#E3959D; --sc-google:#E0B15E; --sc-friend:#9BBE9A; --sc-threads:#9FB0C6;
-  --sc-red:#D98A6A; --sc-tiktok:#78BBB2; --sc-walk:#B8A6DA; --sc-other:#AB8E78;
+  --sc-red:#D98A6A; --sc-tiktok:#78BBB2; --sc-walk:#B8A6DA; --sc-map:#6FA9C9; --sc-other:#AB8E78;
   --shadow:0 6px 22px rgba(90,63,42,.10); --shadow-lg:0 14px 40px rgba(90,63,42,.16);
   --radius:20px;
 }
@@ -29,7 +29,7 @@
     --sage:#9DBE99; --gold:#E0B25A; --espresso:#171009; --espresso-2:#241A12;
     --espresso-ink:#F1E6D6; --espresso-soft:#B6A390;
     --sc-ig:#E6A0A8; --sc-google:#E4BC72; --sc-friend:#A9CBA7; --sc-threads:#AEBFD3;
-    --sc-red:#E29B7D; --sc-tiktok:#8BC9C0; --sc-walk:#C4B4E1; --sc-other:#BC9E86;
+    --sc-red:#E29B7D; --sc-tiktok:#8BC9C0; --sc-walk:#C4B4E1; --sc-map:#8FBEDC; --sc-other:#BC9E86;
     --shadow:0 6px 22px rgba(0,0,0,.30); --shadow-lg:0 14px 40px rgba(0,0,0,.42);
   }
 }
@@ -319,6 +319,7 @@ const SRC = [
   {key:"小紅書",    label:"小紅書",           emo:"📕", color:"var(--sc-red)"},
   {key:"TikTok",    label:"TikTok",           emo:"🎵", color:"var(--sc-tiktok)"},
   {key:"路過看到",  label:"路過看到",         emo:"🚶", color:"var(--sc-walk)"},
+  {key:"巷弄走走地圖", label:"巷弄走走地圖",   emo:"🗺️", color:"var(--sc-map)"},
   {key:"其他",      label:"其他",             emo:"✏️", color:"var(--sc-other)"},
 ];
 const SRC_ORDER = SRC.map(s=>s.key); // index used in records
@@ -335,7 +336,7 @@ const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyJrCXIlv8EoXI1GLFX
 function pad(n){return n<10?"0"+n:""+n;}
 function dateStr(day){return YEAR+"-"+pad(MONTH)+"-"+pad(day);}
 function minToHM(m){return pad(Math.floor(m/60))+":"+pad(m%60);}
-const DEMO = DEMO_ENC.map((r,i)=>({id:"demo-"+i, date:dateStr(r[0]), t:r[1], isNew:r[2], src:r[3], note:r[4]||""}));
+const DEMO = DEMO_ENC.map((r,i)=>({id:"demo-"+i, date:dateStr(r[0]), t:r[1], isNew:r[2], src:(r[3]===7?8:r[3]), note:r[4]||""}));
 
 // ---------- state ----------
 let realRecords = [];     // confirmed-from-server (or local) records
