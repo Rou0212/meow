@@ -336,7 +336,7 @@ const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyJrCXIlv8EoXI1GLFX
 function pad(n){return n<10?"0"+n:""+n;}
 function dateStr(day){return YEAR+"-"+pad(MONTH)+"-"+pad(day);}
 function minToHM(m){return pad(Math.floor(m/60))+":"+pad(m%60);}
-const DEMO = DEMO_ENC.map((r,i)=>({id:"demo-"+i, date:dateStr(r[0]), t:r[1], isNew:r[2], src:(r[3]===7?8:r[3]), note:r[4]||""}));
+const DEMO = DEMO_ENC.map((r,i)=>({id:"demo-"+i, date:dateStr(r[0]), t:r[1], isNew:r[2], src:(r[2]===0? null : (r[3]===7?8:r[3])), note:r[2]===0?"":(r[4]||"")}));
 
 // ---------- state ----------
 let realRecords = [];     // confirmed-from-server (or local) records
@@ -370,14 +370,15 @@ function srcIndexFromLabel(lbl){
 }
 function recToRow(r){
   return { date:r.date.replace(/-/g,"/"), time:minToHM(r.t), type:r.isNew?"新客":"回訪",
-           src:SRC[r.src].key, note:r.note||"", id:r.id };
+           src:(r.src==null?"":SRC[r.src].key), note:r.note||"", id:r.id };
 }
 function rowToRec(row){
   const dateISO=String(row.date||"").replace(/\//g,"-").slice(0,10);
   const tm=String(row.time||"0:0").split(":"); const t=(+tm[0]||0)*60+(+tm[1]||0);
+  const srcRaw=String(row.src==null?"":row.src).trim();
   return { id:String(row.id||("srv-"+dateISO+"-"+t+"-"+Math.random().toString(36).slice(2,6))),
            date:dateISO, t, isNew:String(row.type).indexOf("回")>=0?0:1,
-           src:srcIndexFromLabel(row.src), note:row.note||"" };
+           src:(srcRaw===""? null : srcIndexFromLabel(srcRaw)), note:row.note||"" };
 }
 
 // ---------- storage init (multi-device via Google Sheets) ----------
@@ -471,15 +472,15 @@ function filtered(){
 // ---------- stats ----------
 function computeStats(recs){
   const total=recs.length;
-  let nw=0; const bySrc=new Array(SRC.length).fill(0);
-  recs.forEach(r=>{ if(r.isNew)nw++; bySrc[r.src]++; });
-  return {total, nw, ret:total-nw, newPct: total? nw/total*100:0, bySrc};
+  let nw=0, srcTotal=0; const bySrc=new Array(SRC.length).fill(0);
+  recs.forEach(r=>{ if(r.isNew)nw++; if(r.src!=null){ bySrc[r.src]++; srcTotal++; } });
+  return {total, nw, ret:total-nw, newPct: total? nw/total*100:0, bySrc, srcTotal};
 }
 function dailyBreakdown(recs){
   const map={};
   recs.forEach(r=>{
     if(!map[r.date]) map[r.date]={date:r.date,total:0,nw:0,ret:0,src:new Array(SRC.length).fill(0)};
-    const d=map[r.date]; d.total++; if(r.isNew)d.nw++; else d.ret++; d.src[r.src]++;
+    const d=map[r.date]; d.total++; if(r.isNew)d.nw++; else d.ret++; if(r.src!=null) d.src[r.src]++;
   });
   return Object.values(map).sort((a,b)=> a.date<b.date?1:-1);
 }
@@ -537,8 +538,13 @@ function renderStep1(){
       <button class="big-btn btn-rose" data-new="1"><span class="ico">${smallCatWhite()}</span>🆕 第一次來（新客）</button>
       <button class="big-btn btn-tan" data-new="0"><span class="ico">${pawMini('currentColor')}</span>🐾 來過了（回訪客）</button>
     </div>
+    <div class="q-sub" style="margin:14px 0 0;font-size:12.5px">回訪客點一下就完成囉,不用再問來源 🐾</div>
     <div class="today-tally" id="todayTally"></div>`;
-  regCard.querySelectorAll("[data-new]").forEach(b=>b.onclick=()=>{ state.isNew=+b.dataset.new; state.step=2; renderReg(); });
+  regCard.querySelectorAll("[data-new]").forEach(b=>b.onclick=()=>{
+    state.isNew=+b.dataset.new;
+    if(state.isNew){ state.step=2; renderReg(); }   // 新客 → 問來源
+    else { commit(null, ""); }                       // 回訪 → 直接記錄
+  });
   updateTodayTally();
 }
 function smallCatWhite(){ return `<svg width="26" height="26" viewBox="0 0 60 60" aria-hidden="true"><path d="M18 20 L13 8 L25 16 Z" fill="#fff"/><path d="M42 20 L47 8 L35 16 Z" fill="#fff"/><circle cx="30" cy="30" r="17" fill="#fff"/><path d="M23 30 q3 3 6 0" stroke="#e0959d" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M31 30 q3 3 6 0" stroke="#e0959d" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>`; }
@@ -588,11 +594,13 @@ function renderStep3(){
 let doneTimer=null, doneCd=null;
 function renderDone(){
   const s=state._lastSrc;
+  const srcPart = (s==null) ? '' : ' · '+SRC[s].label+(state._lastNote?'（'+escapeHtml(state._lastNote)+'）':'');
+  const title = state.isNew ? '謝謝你告訴我們！' : '歡迎回來！';
   regCard.innerHTML=`
     <div class="done-wrap">
-      <div class="done-title"><span class="spark">✦</span> 謝謝你告訴我們！<span class="spark">✦</span></div>
+      <div class="done-title"><span class="spark">✦</span> ${title}<span class="spark">✦</span></div>
       ${catSVG().replace('<svg','<svg style="width:120px;height:128px"')}
-      <div class="mini-summary">${pawMini('currentColor')} 已記錄 · ${state.isNew?'新客':'回訪'} · ${SRC[s].label}${state._lastNote?'（'+escapeHtml(state._lastNote)+'）':''} · ${state._lastTime}</div>
+      <div class="mini-summary">${pawMini('currentColor')} 已記錄 · ${state.isNew?'新客':'回訪'}${srcPart} · ${state._lastTime}</div>
       <div class="done-sub">希望下次還能見到你喔～ 🐾</div>
       <button class="big-btn btn-tan" id="doneBtn" style="justify-content:center"><span class="ico">${pawMini('currentColor')}</span>完成（<span id="cd">3</span> 秒後自動返回）</button>
     </div>`;
@@ -676,7 +684,7 @@ function tilesHTML(st){
   </div>`;
 }
 function donutHTML(st){
-  const total=st.total||1;
+  const total=st.srcTotal||1;
   const entries=SRC.map((s,i)=>({...s,i,cnt:st.bySrc[i],pct:st.bySrc[i]/total*100})).filter(e=>e.cnt>0).sort((a,b)=>b.cnt-a.cnt);
   const R=52, C=2*Math.PI*R; let off=0;
   const rings=entries.map(e=>{
@@ -685,10 +693,10 @@ function donutHTML(st){
     off+=len; return seg;
   }).join("");
   const legend=SRC.map((s,i)=>({s,i,c:st.bySrc[i]})).sort((a,b)=>b.c-a.c).map(({s,i,c})=>{const p=c/total*100;return `<div class="leg-row"><span class="dot" style="background:${s.color}"></span><span class="name">${s.label}</span><span class="pct">${p.toFixed(0)}%</span><span class="cnt">${c}</span></div>`;}).join("");
-  return `<div class="panel"><div class="section-title">${pawMini('var(--rose)')} 客人從哪裡知道我們？<span style="font-weight:600;color:var(--muted);font-size:13px">（來源統計）</span></div>
+  return `<div class="panel"><div class="section-title">${pawMini('var(--rose)')} 新客從哪裡知道我們？<span style="font-weight:600;color:var(--muted);font-size:13px">（新客來源）</span></div>
     <div class="donut-wrap">
       <div class="donut"><svg viewBox="0 0 140 140" width="190" height="190">${rings||`<circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--inset)" stroke-width="20"/>`}</svg>
-        <div class="center"><div class="t1">總計</div><div class="t2 num">${st.total.toLocaleString()}</div><div class="t3">人</div></div>
+        <div class="center"><div class="t1">新客</div><div class="t2 num">${st.srcTotal.toLocaleString()}</div><div class="t3">人</div></div>
       </div>
       <div class="legend">${legend}</div>
     </div></div>`;
@@ -736,12 +744,13 @@ function viewOverview(recs){
     `<div class="panel full"><div class="section-title">${pawMini('var(--sage)')} 每日統計列表 <span style="font-weight:600;color:var(--muted);font-size:13px">（近 ${Math.min(10,dailyBreakdown(recs).length)} 天）</span></div>${dailyTableHTML(recs,10)}</div>`;
 }
 function viewSources(recs){
-  const st=computeStats(recs); const total=st.total||1;
+  const st=computeStats(recs); const total=st.srcTotal||1;
   const entries=SRC.map((s,i)=>({...s,i,cnt:st.bySrc[i],pct:st.bySrc[i]/total*100})).sort((a,b)=>b.cnt-a.cnt);
   const maxc=Math.max(1,...st.bySrc);
   const bars=entries.map(e=>`<div class="bar-row"><span class="bl"><span class="dot" style="background:${e.color}"></span>${e.label}</span><div class="bar-track"><div class="bar-fill" style="width:${e.cnt/maxc*100}%;background:${e.color}"></div></div><span class="bv">${e.cnt}</span></div>`).join("");
-  return tilesHTML(st).replace(/tan"|gold"/g,m=>m)+
-    `<div class="panels">${donutHTML(st)}<div class="panel"><div class="section-title">${pawMini('var(--rose)')} 來源排行</div><div class="bars">${bars}</div></div></div>`;
+  return tilesHTML(st)+
+    `<div class="mini-note" style="margin:-6px 0 16px">🗺️ 來源只統計「新客」——回訪客不會被問來源,所以這裡加總 = 新客數（${st.srcTotal.toLocaleString()} 人）。</div>`+
+    `<div class="panels">${donutHTML(st)}<div class="panel"><div class="section-title">${pawMini('var(--rose)')} 新客來源排行</div><div class="bars">${bars}</div></div></div>`;
 }
 function viewNewRet(recs){
   const st=computeStats(recs);
@@ -764,8 +773,10 @@ function viewRecords(recs){
   const sorted=recs.slice().sort((a,b)=> a.date!==b.date ? (a.date<b.date?1:-1) : b.t-a.t);
   const rows=sorted.map(r=>{
     const wd="日一二三四五六"[new Date(r.date+"T00:00").getDay()];
-    const s=SRC[r.src];
-    return `<tr><td>${r.date.replace(/-/g,"/")} (${wd})</td><td style="text-align:left">${minToHM(r.t)}</td><td style="text-align:left"><span class="pill ${r.isNew?'new':'ret'}">${r.isNew?'新客':'回訪'}</span></td><td style="text-align:left"><span class="src-tag"><span class="dot" style="background:${s.color}"></span>${s.label}${r.note?`<span class="note-x">（${escapeHtml(r.note)}）</span>`:''}</span></td></tr>`;
+    const srcCell = (r.src==null)
+      ? `<span class="note-x">—（回訪未問）</span>`
+      : `<span class="src-tag"><span class="dot" style="background:${SRC[r.src].color}"></span>${SRC[r.src].label}${r.note?`<span class="note-x">（${escapeHtml(r.note)}）</span>`:''}</span>`;
+    return `<tr><td>${r.date.replace(/-/g,"/")} (${wd})</td><td style="text-align:left">${minToHM(r.t)}</td><td style="text-align:left"><span class="pill ${r.isNew?'new':'ret'}">${r.isNew?'新客':'回訪'}</span></td><td style="text-align:left">${srcCell}</td></tr>`;
   }).join("");
   const head=`<tr><th>日期</th><th style="text-align:left">時間</th><th style="text-align:left">新客/回訪</th><th style="text-align:left">得知方式</th></tr>`;
   const tbl = sorted.length? `<div class="table-scroll"><table style="min-width:520px"><thead>${head}</thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">這個區間還沒有紀錄 🐾</div>`;
@@ -851,7 +862,7 @@ async function clearReal(){
 async function exportCSV(recs){
   const sorted=recs.slice().sort((a,b)=> a.date!==b.date ? (a.date<b.date?1:-1) : b.t-a.t);
   const lines=[["日期","時間","新客/回訪","得知方式","備註"].join(",")];
-  sorted.forEach(r=>lines.push([r.date, minToHM(r.t), r.isNew?"新客":"回訪", SRC[r.src].label, (r.note||"").replace(/,/g,"，")].join(",")));
+  sorted.forEach(r=>lines.push([r.date, minToHM(r.t), r.isNew?"新客":"回訪", (r.src==null?"":SRC[r.src].label), (r.note||"").replace(/,/g,"，")].join(",")));
   const csv="﻿"+lines.join("\n");
   let dl=null; try{ dl=(window.claude&&window.claude.use)? await window.claude.use("downloads"):null; }catch(e){}
   if(dl){
